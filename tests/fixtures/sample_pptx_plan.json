@@ -1,0 +1,39 @@
+{
+  "presentation_title": "製品紹介2026",
+  "template": "default",
+  "slides": [
+    {
+      "slide_type": "title",
+      "title": "製品紹介プレゼンテーション",
+      "bullets": [],
+      "table": null,
+      "notes": ""
+    },
+    {
+      "slide_type": "content",
+      "title": "製品の特徴",
+      "bullets": [
+        "高性能なAI処理エンジン",
+        "完全オフライン動作",
+        "低コスト・省電力",
+        "マルチプラットフォーム対応"
+      ],
+      "table": null,
+      "notes": "各特徴について詳しく説明してください"
+    },
+    {
+      "slide_type": "content",
+      "title": "価格比較",
+      "bullets": [],
+      "table": {
+        "headers": ["製品名", "価格（月額）", "特徴"],
+        "rows": [
+          ["本製品", "無料", "完全オフライン"],
+          ["競合A", "¥5,000", "クラウド型"],
+          ["競合B", "¥8,000", "クラウド型"]
+        ]
+      },
+      "notes": "価格優位性を強調してください"
+    }
+  ]
+}

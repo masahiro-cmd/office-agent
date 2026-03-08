@@ -1,0 +1,48 @@
+{
+  "document_type": "report",
+  "title": "月次売上報告書",
+  "metadata": {
+    "author": "テスト太郎",
+    "date": "2026-03-08",
+    "department": "営業部",
+    "version": "1.0"
+  },
+  "sections": [
+    {
+      "heading": "概要",
+      "level": 1,
+      "content": "2026年3月の売上は前月比110%となりました。",
+      "bullets": [],
+      "table": null,
+      "footnote": null
+    },
+    {
+      "heading": "詳細",
+      "level": 1,
+      "content": "商品別の売上実績は以下のとおりです。",
+      "bullets": [
+        "商品A: 500万円（前月比+15%）",
+        "商品B: 300万円（前月比+5%）",
+        "商品C: 200万円（前月比-2%）"
+      ],
+      "table": {
+        "headers": ["商品名", "売上（万円）", "前月比"],
+        "rows": [
+          ["商品A", 500, "+15%"],
+          ["商品B", 300, "+5%"],
+          ["商品C", 200, "-2%"],
+          ["合計", 1000, "+10%"]
+        ]
+      },
+      "footnote": "※ 数値は速報値です"
+    },
+    {
+      "heading": "まとめ",
+      "level": 1,
+      "content": "引き続き商品Aの販売強化を推進します。",
+      "bullets": [],
+      "table": null,
+      "footnote": null
+    }
+  ]
+}
