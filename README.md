@@ -1,6 +1,6 @@
 # office-agent
 
-![CI](https://github.com/masahiro/office-agent/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/masahiro-cmd/office-agent/actions/workflows/ci.yml/badge.svg)
 
 完全オフライン動作する Microsoft Office 文書生成 AI エージェント。
 
