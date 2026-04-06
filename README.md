@@ -134,3 +134,18 @@ office-agent/
 ## ライセンス
 
 MIT
+## Demo / デモ
+
+### Input
+
+```
+月次営業報告書をWordで作って
+```
+
+### Output
+
+![Generated Document](./docs/demo.png)
+
+This document was generated entirely offline using a local LLM.
+
+No internet connection was used. No data was sent externally.
