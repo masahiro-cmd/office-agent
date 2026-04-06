@@ -144,7 +144,7 @@ MIT
 
 ### Output
 
-![Generated Document](./docs/demo.png)
+![Generated Document](docs/demo.png)
 
 This document was generated entirely offline using a local LLM.
 
