@@ -7,7 +7,7 @@
 > from natural language — no cloud, no telemetry, no internet required.**
 >>>>>>> d07e219 (Add demo image to README)
 
-[![CI](https://github.com/YOUR_ORG/office-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/office-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/masahiro-cmd/office-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/masahiro-cmd/office-agent/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -34,7 +34,7 @@ and enterprise environments with strict data residency requirements.
 LLM 不要のモックバックエンドで即座に動作確認できます。
 
 ```bash
-git clone https://github.com/YOUR_ORG/office-agent
+git clone https://github.com/masahiro-cmd/office-agent
 cd office-agent
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
@@ -88,7 +88,7 @@ office_agent run --task "製品紹介プレゼンを3枚作って" --backend moc
 ### インストール
 
 ```bash
-git clone https://github.com/YOUR_ORG/office-agent
+git clone https://github.com/masahiro-cmd/office-agent
 cd office-agent
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
