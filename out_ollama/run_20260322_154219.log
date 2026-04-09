@@ -1,0 +1,13 @@
+2026-03-22 15:42:19,364 [INFO] office_agent.llm.client: LLMClient attempt 1/3 [ollama/llama3.2:3b]
+2026-03-22 15:42:25,243 [ERROR] office_agent.agent.validator: Plan validation error: loc=title msg=String should have at least 1 character input=''
+2026-03-22 15:42:25,243 [ERROR] office_agent.agent.validator: Plan validation error: loc=sections -> 0 -> level msg=Input should be greater than or equal to 1 input=0
+2026-03-22 15:42:25,244 [WARNING] office_agent.agent.core: Schema validation failed (attempt 1): 2 validation errors for DocxPlan
+title
+  String should have at least 1 character [type=string_too_short, input_value='', input_type=str]
+    For further information visit https://errors.pydantic.dev/2
+2026-03-22 15:42:25,244 [INFO] office_agent.llm.client: LLMClient attempt 1/1 [ollama/llama3.2:3b]
+2026-03-22 15:42:27,562 [INFO] office_agent.agent.core: Plan validated (doc_type: 'docx')
+2026-03-22 15:42:27,563 [INFO] office_agent.agent.core: Executing tool: create_docx
+2026-03-22 15:42:27,563 [INFO] office_agent.tools: ToolRegistry: calling create_docx
+2026-03-22 15:42:27,757 [INFO] office_agent.tools.docx_tool: Using template: templates/word/sample.docx
+2026-03-22 15:42:27,771 [INFO] office_agent.tools.docx_tool: Saved docx: out_ollama/title_value.docx

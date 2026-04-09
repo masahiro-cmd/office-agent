@@ -1,0 +1,12 @@
+{
+  "document_type": "report",
+  "title": "title_value",
+  "sections": [
+    {
+      "heading": "heading_value",
+      "level": 1,
+      "content": "",
+      "bullets": []
+    }
+  ]
+}

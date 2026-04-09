@@ -1,0 +1,30 @@
+{
+  "presentation_title": "新製品紹介",
+  "slides": [
+    {
+      "slide_type": "title",
+      "title": "新製品の特徴をご紹介します",
+      "bullets": [],
+      "notes": ""
+    },
+    {
+      "slide_type": "content",
+      "title": "高性能AIエンジン搭載の利点",
+      "bullets": [
+        "処理速度が従来比200%向上",
+        "完全オフライン動作：社内機密を保護"
+      ],
+      "notes": "各特徴について競合製品との比較を説明してください"
+    },
+    {
+      "slide_type": "content",
+      "title": "導入実績・まとめ",
+      "bullets": [
+        "導入実績：国内製造業50社以上、平均ROI 180%",
+        "無料トライアル30日間実施中",
+        "お問い合わせ：sales@example.co.jp"
+      ],
+      "notes": ""
+    }
+  ]
+}

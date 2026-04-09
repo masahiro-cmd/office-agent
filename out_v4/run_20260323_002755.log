@@ -1,0 +1,6 @@
+2026-03-23 00:27:55,294 [INFO] office_agent.llm.client: LLMClient attempt 1/3 [ollama/llama3.1:8b]
+2026-03-23 00:28:10,942 [INFO] office_agent.agent.core: Plan validated (doc_type: 'xlsx')
+2026-03-23 00:28:10,942 [INFO] office_agent.agent.core: Executing tool: create_xlsx
+2026-03-23 00:28:10,942 [INFO] office_agent.tools: ToolRegistry: calling create_xlsx
+2026-03-23 00:28:11,046 [INFO] office_agent.tools.xlsx_tool: Using template: templates/excel/sample.xlsx
+2026-03-23 00:28:11,052 [INFO] office_agent.tools.xlsx_tool: Saved xlsx: out_v4/2026年3月度売上集計.xlsx

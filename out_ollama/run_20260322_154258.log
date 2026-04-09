@@ -1,0 +1,6 @@
+2026-03-22 15:42:58,098 [INFO] office_agent.llm.client: LLMClient attempt 1/3 [ollama/llama3.2:3b]
+2026-03-22 15:43:04,611 [INFO] office_agent.agent.core: Plan validated (doc_type: 'pptx')
+2026-03-22 15:43:04,612 [INFO] office_agent.agent.core: Executing tool: create_pptx
+2026-03-22 15:43:04,612 [INFO] office_agent.tools: ToolRegistry: calling create_pptx
+2026-03-22 15:43:04,818 [INFO] office_agent.tools.pptx_tool: Using template: templates/pptx/sample.pptx
+2026-03-22 15:43:04,829 [INFO] office_agent.tools.pptx_tool: Saved pptx: out_ollama/新製品紹介.pptx

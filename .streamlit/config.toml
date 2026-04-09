@@ -1,0 +1,15 @@
+# Streamlit configuration for offline / air-gapped deployment
+# Disables all external network activity from the Streamlit framework.
+
+[browser]
+# Disable usage statistics sent to Streamlit/Snowflake servers.
+# REQUIRED for air-gapped environments (plausible.io telemetry endpoint).
+gatherUsageStats = false
+
+[server]
+# Suppress automatic browser launch and reduce external polling.
+# Recommended for headless / server deployments.
+headless = true
+
+# Disable file system watcher to avoid inotify overhead in restricted environments.
+fileWatcherType = "none"

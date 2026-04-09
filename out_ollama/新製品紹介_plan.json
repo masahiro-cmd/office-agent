@@ -1,0 +1,31 @@
+{
+  "presentation_title": "新製品紹介",
+  "template": "default",
+  "slides": [
+    {
+      "slide_type": "title",
+      "title": "新製品紹介2026",
+      "bullets": [],
+      "notes": ""
+    },
+    {
+      "slide_type": "content",
+      "title": "製品の特徴",
+      "bullets": [
+        "高性能AIエンジン搭載",
+        "完全オフライン動作",
+        "低コスト運用"
+      ],
+      "notes": ""
+    },
+    {
+      "slide_type": "content",
+      "title": "まとめ",
+      "bullets": [
+        "革新的な技術",
+        "お問い合わせはこちら"
+      ],
+      "notes": ""
+    }
+  ]
+}
