@@ -1,0 +1,53 @@
+<Window
+    x:Class="OfficeAgent.Wpf.SplashWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="OfficeAgent"
+    Width="480" Height="280"
+    WindowStartupLocation="CenterScreen"
+    WindowStyle="None"
+    ResizeMode="NoResize"
+    AllowsTransparency="True"
+    Background="Transparent">
+
+    <Border CornerRadius="8" Background="{StaticResource BrandDark}">
+        <Grid Margin="40">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Logo / Title -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="OfficeAgent"
+                           FontFamily="{StaticResource UiFont}"
+                           FontSize="28" FontWeight="Bold"
+                           Foreground="White"/>
+                <TextBlock Text=" AI"
+                           FontFamily="{StaticResource UiFont}"
+                           FontSize="28" FontWeight="Light"
+                           Foreground="{StaticResource BrandBlue}"/>
+            </StackPanel>
+
+            <!-- Status message -->
+            <TextBlock x:Name="StatusText"
+                       Grid.Row="2"
+                       Text="起動を準備しています..."
+                       FontFamily="{StaticResource UiFont}"
+                       FontSize="13"
+                       Foreground="#AAAAAA"
+                       Margin="0,0,0,8"/>
+
+            <!-- Progress bar -->
+            <ProgressBar x:Name="ProgressBar"
+                         Grid.Row="3"
+                         Height="4"
+                         IsIndeterminate="True"
+                         Foreground="{StaticResource BrandBlue}"
+                         Background="#333333"/>
+        </Grid>
+    </Border>
+
+</Window>

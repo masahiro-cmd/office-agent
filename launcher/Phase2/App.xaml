@@ -1,0 +1,20 @@
+<Application
+    x:Class="OfficeAgent.Wpf.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    ShutdownMode="OnMainWindowClose">
+
+    <Application.Resources>
+        <!-- Brand colors -->
+        <SolidColorBrush x:Key="BrandBlue"      Color="#1E5FA8"/>
+        <SolidColorBrush x:Key="BrandDark"      Color="#0D1B2A"/>
+        <SolidColorBrush x:Key="BrandLight"     Color="#F4F6F9"/>
+        <SolidColorBrush x:Key="AccentGreen"    Color="#2ECC71"/>
+        <SolidColorBrush x:Key="ErrorRed"       Color="#E74C3C"/>
+        <SolidColorBrush x:Key="WarnYellow"     Color="#F39C12"/>
+
+        <!-- Typography -->
+        <FontFamily x:Key="UiFont">Segoe UI, Yu Gothic UI, Meiryo UI</FontFamily>
+    </Application.Resources>
+
+</Application>

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>OfficeAgent</AssemblyName>
+    <RootNamespace>OfficeAgent.Launcher</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Single-file self-contained publish for the ZIP package -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <ApplicationIcon>..\..\assets\icon.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Company>OfficeAgent</Company>
+    <Product>OfficeAgent</Product>
+    <Description>OfficeAgent — offline AI document generator</Description>
+  </PropertyGroup>
+
+  <!-- No external NuGet packages required for Phase 1 -->
+
+</Project>

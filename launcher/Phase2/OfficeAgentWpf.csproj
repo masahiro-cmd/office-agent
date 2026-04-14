@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <AssemblyName>OfficeAgent</AssemblyName>
+    <RootNamespace>OfficeAgent.Wpf</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <ApplicationIcon>..\..\assets\icon.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Company>OfficeAgent</Company>
+    <Product>OfficeAgent</Product>
+    <Description>OfficeAgent — offline AI document generator</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WebView2 embeds a Chromium-based renderer in the WPF window.
+         This package ships with Windows 11; a redistributable is bundled
+         for Windows 10 by the Inno Setup installer. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2535.41" />
+  </ItemGroup>
+
+</Project>
