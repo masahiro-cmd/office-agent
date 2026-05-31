@@ -292,3 +292,23 @@ Before finishing:
 
 ---
 
+
+---
+
+## Project-Specific Rules for office-agent
+
+This project is office-agent.
+
+It is a fully offline AI document generation tool that creates Word, Excel, and PowerPoint files from natural language.
+
+Core constraints:
+
+- Do not introduce cloud APIs.
+- Do not add telemetry.
+- Do not require internet access at runtime.
+- All models must run locally.
+- Data must never leave the local environment.
+- Preserve the existing Python document-generation pipeline.
+- Do not redesign the core system from scratch.
+- Focus on Windows-first productization, packaging, offline distribution, licensing, and enterprise/government readiness.
+- Treat the product as intended for non-engineers in air-gapped or secure environments.
