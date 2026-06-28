@@ -67,7 +67,7 @@ def _check_content_quality(plan: dict) -> None:
                 raise ValueError("rowsが空です")
     if "slides" in plan:
         for slide in plan["slides"]:
-            if slide.get("slide_type") == "content" and not slide.get("bullets"):
+            if slide.get("slide_type") == "content" and not slide.get("bullets") and not slide.get("table"):
                 raise ValueError("bulletsが空です")
 
 

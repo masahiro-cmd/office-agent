@@ -63,7 +63,7 @@ class Orchestrator:
 
         # Save plan JSON for debugging
         plan_path = out_path / f"{_safe_stem(result['output_path'])}_plan.json"
-        plan_path.write_text(json.dumps(validated, ensure_ascii=False, indent=2))
+        plan_path.write_text(json.dumps(validated, ensure_ascii=False, indent=2), encoding="utf-8")
         result["plan_path"] = str(plan_path)
 
         return result
