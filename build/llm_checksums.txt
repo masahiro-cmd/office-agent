@@ -1,0 +1,17 @@
+# llama.cpp binary version lock file
+#
+# Format: <sha256>  <filename>
+#
+# These hashes must match the values in fetch_llm.ps1.
+# Update both files together when upgrading the llama.cpp version.
+#
+# Current pinned tag: b3576
+# Release page: https://github.com/ggerganov/llama.cpp/releases/tag/b3576
+#
+# PLACEHOLDER entries below must be replaced with actual SHA256 hashes
+# after downloading the binaries. Run:
+#   Get-FileHash -Algorithm SHA256 -Path llama-server-avx2.exe
+
+PLACEHOLDER_AVX2_SHA256    llama-server-avx2.exe
+PLACEHOLDER_AVX512_SHA256  llama-server-avx512.exe
+PLACEHOLDER_NOAVX_SHA256   llama-server-noavx.exe
