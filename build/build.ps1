@@ -117,8 +117,8 @@ if ($SkipPyInstaller) {
 # ---------------------------------------------------------------------------
 Write-Step "3. llama-server binaries"
 
-$FetchArgs = @("-OutDir", "build\dist\llm")
-if ($LlmCacheDir -ne "") { $FetchArgs += @("-CacheDir", $LlmCacheDir) }
+$FetchArgs = @{ OutDir = "build\dist\llm" }
+if ($LlmCacheDir -ne "") { $FetchArgs["CacheDir"] = $LlmCacheDir }
 
 & (Join-Path $BuildDir "fetch_llm.ps1") @FetchArgs
 if ($LASTEXITCODE -ne 0) { throw "fetch_llm.ps1 failed." }
