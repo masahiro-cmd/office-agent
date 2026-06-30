@@ -12,9 +12,10 @@
 # The download mode is provided for development convenience only.
 
 param(
-    [string]$CacheDir = "",          # If set, copy from here instead of downloading
-    [string]$OutDir   = "build\dist\llm",
-    [switch]$SkipVerify              # Skip SHA256 verification (not recommended)
+    [string]$CacheDir  = "",          # If set, copy from here instead of downloading
+    [string]$OutDir    = "build\dist\llm",
+    [string]$LlamaTag  = "b9848",     # Override to pin a specific llama.cpp release
+    [switch]$SkipVerify               # Skip SHA256 verification (not recommended)
 )
 
 Set-StrictMode -Version Latest
@@ -23,33 +24,19 @@ $ErrorActionPreference = "Stop"
 # ---------------------------------------------------------------------------
 # Pinned llama.cpp release and binary names
 #
-# To upgrade: update the tag and SHA256 hashes below.
-# Download the corresponding release from:
-#   https://github.com/ggerganov/llama.cpp/releases/tag/<LLAMA_TAG>
+# To upgrade: pass -LlamaTag <tag> or update the $LlamaTag default above.
+# Asset naming changed in newer releases — current format: llama-bXXXX-bin-win-cpu-x64.zip
+# Browse releases at: https://github.com/ggerganov/llama.cpp/releases
 # ---------------------------------------------------------------------------
-$LLAMA_TAG = "b3576"
+$LLAMA_TAG = $LlamaTag
 
 $Binaries = @(
     @{
-        Variant  = "avx2"
-        ZipName  = "llama-$LLAMA_TAG-bin-win-avx2-x64.zip"
+        Variant  = "cpu-x64"
+        ZipName  = "llama-$LLAMA_TAG-bin-win-cpu-x64.zip"
         ExeInZip = "llama-server.exe"
-        OutName  = "llama-server-avx2.exe"
-        Sha256   = "PLACEHOLDER_AVX2_SHA256"   # Replace with actual hash after download
-    },
-    @{
-        Variant  = "avx512"
-        ZipName  = "llama-$LLAMA_TAG-bin-win-avx512-x64.zip"
-        ExeInZip = "llama-server.exe"
-        OutName  = "llama-server-avx512.exe"
-        Sha256   = "PLACEHOLDER_AVX512_SHA256"
-    },
-    @{
-        Variant  = "noavx"
-        ZipName  = "llama-$LLAMA_TAG-bin-win-noavx-x64.zip"
-        ExeInZip = "llama-server.exe"
-        OutName  = "llama-server-noavx.exe"
-        Sha256   = "PLACEHOLDER_NOAVX_SHA256"
+        OutName  = "llama-server.exe"
+        Sha256   = "PLACEHOLDER_CPU_X64_SHA256"   # Replace with actual hash after download
     }
 )
 
