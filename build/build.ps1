@@ -178,7 +178,71 @@ Write-Step "6. Config and directories"
 $ConfigSrc = Join-Path $RepoRoot "dist\config\settings.ini"
 $ConfigDst = Join-Path $DistDir "config"
 New-Item -ItemType Directory -Force -Path $ConfigDst | Out-Null
-Copy-Item -Path $ConfigSrc -Destination $ConfigDst -Force
+
+if (Test-Path $ConfigSrc) {
+    Write-Host "  Copying settings.ini from $ConfigSrc"
+    Copy-Item -Path $ConfigSrc -Destination $ConfigDst -Force
+} else {
+    Write-Host "  $ConfigSrc not found — generating default settings.ini"
+    $DefaultSettingsIni = @'
+; OfficeAgent configuration file
+; Managed by IT administrators — end users do not need to edit this file.
+; Changes take effect on next application start.
+;
+; Path: <install_dir>\config\settings.ini
+
+[app]
+; Application version — do not modify manually.
+version = 1.0.0
+
+; Model tier: standard | pro
+; standard requires 8 GB RAM, pro requires 16 GB RAM.
+tier = standard
+
+[llm]
+; Port for the llama-server process (localhost only).
+; Change only if 8080 conflicts with another service.
+port = 8080
+
+; Context window in tokens.
+; standard: 4096, pro: 8192
+context_size = 4096
+
+; Number of CPU threads for inference.
+; 0 = auto-detect (uses half of logical CPU count as an estimate of physical cores).
+; Set explicitly if auto-detection is incorrect for your hardware.
+threads = 0
+
+; GPU acceleration: true | false
+; Requires a compatible NVIDIA GPU and the CUDA-enabled llama-server binary.
+; Leave false for CPU-only environments.
+gpu = false
+
+[server]
+; Port for the Streamlit web server (localhost only).
+; Change only if 8501 conflicts with another service.
+port = 8501
+
+[paths]
+; Directory where generated Office documents are saved.
+; Leave blank to use the current user's Documents\OfficeAgent\ folder.
+output_dir =
+
+; Relative paths to model files from the install directory.
+; Do not change unless models have been moved.
+model_standard = models\standard.gguf
+model_pro = models\pro.gguf
+
+[security]
+; Number of days to retain audit log files before automatic deletion.
+log_retention_days = 90
+
+; Verify SHA256 checksums of critical files on every startup.
+; Set to false only if advised by your IT administrator.
+integrity_check = true
+'@
+    Set-Content -Path (Join-Path $ConfigDst "settings.ini") -Value $DefaultSettingsIni -Encoding UTF8
+}
 
 # Placeholder output and logs directories (shipped empty in the ZIP).
 New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "output") | Out-Null
