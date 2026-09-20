@@ -16,11 +16,15 @@
     <PublishReadyToRun>true</PublishReadyToRun>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
-    <ApplicationIcon>..\..\assets\icon.ico</ApplicationIcon>
     <Version>1.0.0</Version>
     <Company>OfficeAgent</Company>
     <Product>OfficeAgent</Product>
     <Description>OfficeAgent — offline AI document generator</Description>
+  </PropertyGroup>
+
+  <!-- Applied only when the icon is present, so the build does not fail without it. -->
+  <PropertyGroup Condition="Exists('..\..\assets\icon.ico')">
+    <ApplicationIcon>..\..\assets\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- No external NuGet packages required for Phase 1 -->

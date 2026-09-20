@@ -453,6 +453,15 @@ internal sealed class ConsoleLauncher
     // -----------------------------------------------------------------------
     // User-visible error dialog
     // -----------------------------------------------------------------------
+    private const uint MB_OK            = 0x00000000;
+    private const uint MB_ICONERROR     = 0x00000010;
+    private const uint MB_SETFOREGROUND = 0x00010000;
+
+    [System.Runtime.InteropServices.DllImport(
+        "user32.dll",
+        CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int MessageBoxW(IntPtr hWnd, string text, string caption, uint type);
+
     static void ShowError(string message)
     {
         Console.ForegroundColor = ConsoleColor.Red;
@@ -463,11 +472,8 @@ internal sealed class ConsoleLauncher
         // even if they have the console window minimised.
         try
         {
-            System.Windows.Forms.MessageBox.Show(
-                message,
-                "OfficeAgent — エラー",
-                System.Windows.Forms.MessageBoxButtons.OK,
-                System.Windows.Forms.MessageBoxIcon.Error);
+            MessageBoxW(IntPtr.Zero, message, "OfficeAgent — エラー",
+                        MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
         }
         catch
         {
