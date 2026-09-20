@@ -1,7 +1,13 @@
 # fetch_llm.ps1
 #
-# Downloads (or copies from a local cache) the llama-server Windows binaries
-# and places them into build\dist\llm\.
+# Downloads (or copies from a local cache) the llama-server Windows runtime
+# and places it into build\dist\llm\.
+#
+# The runtime is llama-server.exe PLUS its DLLs. Current llama.cpp Windows
+# releases are dynamically linked: llama-server.exe is a ~9 KB front-end and
+# all inference code lives in llama.dll / ggml*.dll. Shipping the exe alone
+# produces a process that dies at load time with exit code 0xC0000135
+# (STATUS_DLL_NOT_FOUND, reported as -1073741515) and prints nothing.
 #
 # Usage:
 #   .\fetch_llm.ps1                          # Download from GitHub (internet required)
@@ -9,6 +15,8 @@
 #                                            # (use this for air-gap build environments)
 #
 # The -CacheDir mode is the recommended path for production builds.
+# For that mode, place the untouched release ZIP in the cache directory so the
+# runtime cannot be partially copied and so SHA256 verification stays possible.
 # The download mode is provided for development convenience only.
 
 param(
@@ -36,11 +44,21 @@ $Binaries = @(
         ZipName  = "llama-$LLAMA_TAG-bin-win-cpu-x64.zip"
         ExeInZip = "llama-server.exe"
         OutName  = "llama-server.exe"
-        Sha256   = "PLACEHOLDER_CPU_X64_SHA256"   # Replace with actual hash after download
+        # SHA256 of the release ZIP — not of the extracted exe. One hash over
+        # the archive covers the exe and every runtime DLL together.
+        # Replace with the actual hash after downloading (see llm_checksums.txt).
+        Sha256   = "PLACEHOLDER_CPU_X64_SHA256"
     }
 )
 
 $GithubBase = "https://github.com/ggerganov/llama.cpp/releases/download/$LLAMA_TAG"
+
+# Runtime files copied from the release bin directory alongside llama-server.exe.
+# *.dll covers llama.dll, ggml.dll, ggml-base.dll, ggml-cpu.dll, mtmd.dll and
+# the ggml-cpu-*.dll CPU backends that ggml.dll loads at run time to pick the
+# AVX/AVX2/AVX-512 code path. Other executables, *.pdb, *.lib and headers from
+# the archive are deliberately not copied.
+$RuntimePatterns = @("*.dll", "*.manifest")
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -60,16 +78,101 @@ function Verify-Sha256 {
     Write-Host "  SHA256 OK: $FilePath"
 }
 
+function Copy-LlamaRuntime {
+    # Copies llama-server.exe and every runtime file sitting next to it.
+    param(
+        [string]$BinDir,    # Directory that holds llama-server.exe and its DLLs
+        [string]$ExeName,   # Source exe file name inside $BinDir
+        [string]$OutName,   # Destination exe file name inside $OutDir
+        [string]$OutDir
+    )
+
+    $exeSrc = Join-Path $BinDir $ExeName
+    if (-not (Test-Path $exeSrc)) {
+        throw "$ExeName not found in: $BinDir"
+    }
+
+    Copy-Item -Path $exeSrc -Destination (Join-Path $OutDir $OutName) -Force
+    Write-Host "  Copied: $OutName"
+
+    $dllCount   = 0
+    $otherCount = 0
+    foreach ($pattern in $RuntimePatterns) {
+        $files = @(Get-ChildItem -Path $BinDir -Filter $pattern -File -ErrorAction SilentlyContinue)
+        foreach ($f in $files) {
+            Copy-Item -Path $f.FullName -Destination (Join-Path $OutDir $f.Name) -Force
+            if ($f.Extension -eq ".dll") { $dllCount++ } else { $otherCount++ }
+        }
+    }
+
+    # Fail fast. Without its DLLs the exe still packages and ships fine, and
+    # only fails at the customer site with a silent 0xC0000135 exit, so the
+    # build must refuse to continue here.
+    if ($dllCount -eq 0) {
+        throw "No runtime DLLs found next to $ExeName in: $BinDir`nllama-server.exe cannot start without them (exit code 0xC0000135)."
+    }
+
+    Write-Host "  Copied: $dllCount DLL(s), $otherCount other runtime file(s)"
+}
+
+function Expand-LlamaRuntimeZip {
+    # Verifies a release ZIP, extracts it and copies the runtime out of it.
+    param([string]$ZipPath, [hashtable]$Binary, [string]$ExtractDir, [string]$OutDir)
+
+    if (-not $SkipVerify) { Verify-Sha256 $ZipPath $Binary.Sha256 }
+
+    Write-Host "  Extracting..."
+    Expand-Archive -Path $ZipPath -DestinationPath $ExtractDir -Force
+
+    # The archive layout has changed across llama.cpp releases (files at the
+    # archive root vs. nested under build\bin\), so locate the exe first and
+    # treat whatever directory holds it as the runtime bin directory.
+    $exeFound = Get-ChildItem -Path $ExtractDir -Recurse -Filter $Binary.ExeInZip -File |
+                Select-Object -First 1
+    if (-not $exeFound) {
+        throw "Could not find $($Binary.ExeInZip) inside $ZipPath"
+    }
+
+    Copy-LlamaRuntime -BinDir  $exeFound.DirectoryName `
+                      -ExeName $Binary.ExeInZip `
+                      -OutName $Binary.OutName `
+                      -OutDir  $OutDir
+}
+
 function Get-BinaryFromCache {
     param([hashtable]$Binary, [string]$CacheDir, [string]$OutDir)
-    $src = Join-Path $CacheDir $Binary.OutName
-    if (-not (Test-Path $src)) {
-        throw "Cache file not found: $src`nExpected pre-downloaded binary at this path."
+
+    # Preferred: the untouched release ZIP placed in the cache by the vendor.
+    # Nothing can be missed, and the SHA256 check still applies.
+    $zipSrc = Join-Path $CacheDir $Binary.ZipName
+    if (Test-Path $zipSrc) {
+        Write-Host "  Source: cached release archive $($Binary.ZipName)"
+        $extractDir = Join-Path $env:TEMP "oa-llm-cache-$(Get-Random)"
+        try {
+            Expand-LlamaRuntimeZip -ZipPath    $zipSrc `
+                                   -Binary     $Binary `
+                                   -ExtractDir $extractDir `
+                                   -OutDir     $OutDir
+        } finally {
+            Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue
+        }
+        return
     }
-    $dst = Join-Path $OutDir $Binary.OutName
-    Copy-Item -Path $src -Destination $dst -Force
-    Write-Host "  Copied: $($Binary.OutName)"
-    if (-not $SkipVerify) { Verify-Sha256 $dst $Binary.Sha256 }
+
+    # Fallback: a pre-extracted cache directory holding the exe and its DLLs.
+    $exeSrc = Join-Path $CacheDir $Binary.OutName
+    if (Test-Path $exeSrc) {
+        Write-Host "  Source: pre-extracted cache directory"
+        Write-Warning "SHA256 verification covers the release ZIP, so it is skipped for a pre-extracted cache."
+        Write-Warning "Place $($Binary.ZipName) in $CacheDir to enable verification."
+        Copy-LlamaRuntime -BinDir  $CacheDir `
+                          -ExeName $Binary.OutName `
+                          -OutName $Binary.OutName `
+                          -OutDir  $OutDir
+        return
+    }
+
+    throw "Cache file not found. Expected one of:`n  $zipSrc`n  $exeSrc"
 }
 
 function Get-BinaryFromGitHub {
@@ -80,21 +183,11 @@ function Get-BinaryFromGitHub {
     Write-Host "  Downloading: $($Binary.ZipName)"
     Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
 
-    Write-Host "  Extracting..."
     $extractDir = Join-Path $TempDir "extract_$($Binary.Variant)"
-    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
-
-    # Find the exe inside the extracted archive (may be in a subdirectory).
-    $exeFound = Get-ChildItem -Path $extractDir -Recurse -Filter $Binary.ExeInZip |
-                Select-Object -First 1
-    if (-not $exeFound) {
-        throw "Could not find $($Binary.ExeInZip) inside $($Binary.ZipName)"
-    }
-
-    $dst = Join-Path $OutDir $Binary.OutName
-    Copy-Item -Path $exeFound.FullName -Destination $dst -Force
-    Write-Host "  Extracted to: $dst"
-    if (-not $SkipVerify) { Verify-Sha256 $dst $Binary.Sha256 }
+    Expand-LlamaRuntimeZip -ZipPath    $zipPath `
+                           -Binary     $Binary `
+                           -ExtractDir $extractDir `
+                           -OutDir     $OutDir
 }
 
 # ---------------------------------------------------------------------------
@@ -139,4 +232,9 @@ if ($CacheDir -ne "") {
 }
 
 Write-Host ""
-Write-Host "Done. Binaries written to: $OutDirAbs" -ForegroundColor Green
+Write-Host "Done. Runtime written to: $OutDirAbs" -ForegroundColor Green
+
+# List what was produced so a missing DLL is visible in the build log.
+Get-ChildItem -Path $OutDirAbs -File | Sort-Object Name | ForEach-Object {
+    Write-Host ("  {0,-34} {1,12:N0} bytes" -f $_.Name, $_.Length)
+}

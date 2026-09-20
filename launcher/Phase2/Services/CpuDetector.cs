@@ -11,12 +11,16 @@ internal static class CpuDetector
 {
     /// <summary>
     /// Returns the absolute path to the best available llama-server binary
-    /// for the current CPU. Falls back to the noavx variant if higher
-    /// capability binaries are missing.
+    /// for the current CPU. Prefers the unified cpu-x64 binary, which picks
+    /// its own AVX code path at run time; falls back to the per-variant
+    /// binaries shipped by older packages.
     /// </summary>
     public static string SelectBinary(string installRoot)
     {
         string llmDir = Path.Combine(installRoot, "llm");
+
+        string unifiedPath = Path.Combine(llmDir, "llama-server.exe");
+        if (File.Exists(unifiedPath)) return unifiedPath;
 
         if (Avx512F.IsSupported)
         {

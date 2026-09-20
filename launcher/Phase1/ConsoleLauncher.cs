@@ -203,6 +203,21 @@ internal sealed class ConsoleLauncher
     {
         string llmDir = Path.Combine(installRoot, "llm");
 
+        // Current llama.cpp Windows releases ship a single cpu-x64 binary that
+        // selects the AVX code path itself at run time (ggml.dll loads the
+        // matching ggml-cpu-*.dll), so prefer it when present.
+        string unifiedPath = Path.Combine(llmDir, "llama-server.exe");
+        if (File.Exists(unifiedPath))
+        {
+            string caps = Avx512F.IsSupported ? "AVX-512"
+                        : Avx2.IsSupported    ? "AVX2"
+                                              : "AVX なし";
+            Console.WriteLine($"  CPU: {caps} 検出 → llama-server.exe を使用（実行時に最適化を選択）");
+            return unifiedPath;
+        }
+
+        // Backward compatibility: packages built before the unified binary
+        // shipped one executable per CPU variant.
         // Check AVX-512 first, then AVX2, then fallback.
         if (Avx512F.IsSupported)
         {

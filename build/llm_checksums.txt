@@ -2,6 +2,11 @@
 #
 # Format: <sha256>  <filename>
 #
+# The hash is taken over the llama.cpp RELEASE ZIP, not over llama-server.exe.
+# The Windows release is dynamically linked, so the runtime is llama-server.exe
+# plus llama.dll / ggml*.dll; hashing the exe alone would leave every DLL
+# unverified. One hash over the archive covers all of them together.
+#
 # These hashes must match the values in fetch_llm.ps1.
 # Update both files together when upgrading the llama.cpp version.
 #
@@ -9,7 +14,10 @@
 # Release page: https://github.com/ggerganov/llama.cpp/releases/tag/b9848
 #
 # PLACEHOLDER entries below must be replaced with actual SHA256 hashes
-# after downloading the binaries. Run:
-#   Get-FileHash -Algorithm SHA256 -Path llama-server.exe
+# after downloading the release archive. Run:
+#   Get-FileHash -Algorithm SHA256 -Path llama-b9848-bin-win-cpu-x64.zip
+#
+# For air-gap builds, place that same ZIP in the -CacheDir directory; the
+# build then verifies it against the hash below before extracting.
 
-PLACEHOLDER_CPU_X64_SHA256    llama-server.exe
+PLACEHOLDER_CPU_X64_SHA256    llama-b9848-bin-win-cpu-x64.zip

@@ -73,10 +73,11 @@ Source: "{#DistDir}\app\OfficeAgentBackend.exe"; DestDir: "{app}\app"; Flags: ig
 Source: "{#DistDir}\app\_internal\*"; DestDir: "{app}\app\_internal"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
 
-; --- llama-server binaries (all CPU variants) ---
-Source: "{#DistDir}\llm\llama-server-avx2.exe";   DestDir: "{app}\llm"; Flags: ignoreversion
-Source: "{#DistDir}\llm\llama-server-avx512.exe";  DestDir: "{app}\llm"; Flags: ignoreversion
-Source: "{#DistDir}\llm\llama-server-noavx.exe";   DestDir: "{app}\llm"; Flags: ignoreversion
+; --- llama.cpp runtime ---
+; One cpu-x64 binary that selects its AVX code path at run time, plus the DLLs
+; it loads (llama.dll, ggml*.dll, ggml-cpu-*.dll). The exe alone cannot start.
+Source: "{#DistDir}\llm\llama-server.exe"; DestDir: "{app}\llm"; Flags: ignoreversion
+Source: "{#DistDir}\llm\*.dll";            DestDir: "{app}\llm"; Flags: ignoreversion
 
 ; --- Model (large file — place last for progress bar accuracy) ---
 #if MyTier == "pro"
