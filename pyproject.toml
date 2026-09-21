@@ -20,6 +20,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Streamlit GUI (office_agent gui / the packaged Windows build).
+# Kept optional so CLI-only installs stay small in air-gapped environments.
+gui = [
+    "streamlit>=1.55,<2",
+]
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",

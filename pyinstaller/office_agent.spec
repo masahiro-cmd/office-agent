@@ -12,8 +12,33 @@
 # The C# launcher spawns OfficeAgentBackend.exe with environment variables
 # pre-set; users never interact with this binary directly.
 
+import importlib.util
 import os
 from PyInstaller.utils.hooks import collect_all, collect_data_files
+
+# ---------------------------------------------------------------------------
+# Build environment guard
+#
+# collect_all() does not fail when a package is missing from the build
+# environment: it logs a warning and returns empty lists. The build then
+# succeeds and ships an executable that dies at start-up with
+# ModuleNotFoundError. Fail here instead, while the build is still running.
+# ---------------------------------------------------------------------------
+REQUIRED_PACKAGES = ("streamlit", "altair")
+
+missing = [name for name in REQUIRED_PACKAGES if importlib.util.find_spec(name) is None]
+if missing:
+    raise SystemExit(
+        "\n".join([
+            "",
+            "PyInstaller build environment is incomplete.",
+            f"  Missing package(s): {', '.join(missing)}",
+            "",
+            "Install the GUI dependencies into the build environment first:",
+            "  pip install -r requirements-gui.txt",
+            "",
+        ])
+    )
 
 # ---------------------------------------------------------------------------
 # Collect Streamlit — it has many dynamic imports and data files that
@@ -91,11 +116,12 @@ a = Analysis(
         "notebook",
         "black",
         "isort",
-        # Large scientific packages not used by office-agent
+        # Large scientific packages not used by office-agent.
+        # Note: Pillow (PIL) must NOT be excluded — it is a hard dependency of
+        # Streamlit, which imports it lazily when rendering media elements.
         "scipy",
         "sklearn",
         "matplotlib",
-        "PIL",
         "cv2",
         "tensorflow",
         "torch",

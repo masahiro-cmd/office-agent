@@ -94,6 +94,11 @@ Write-Host "  Installing / upgrading dependencies..."
 & $Pip install --quiet --upgrade pyinstaller
 & $Pip install --quiet -r (Join-Path $RepoRoot "requirements.txt")
 
+# The frozen application runs the Streamlit GUI, so the build environment needs
+# the GUI dependencies too. Without them PyInstaller bundles no Streamlit and
+# the packaged executable fails at start-up with ModuleNotFoundError.
+& $Pip install --quiet -r (Join-Path $RepoRoot "requirements-gui.txt")
+
 # ---------------------------------------------------------------------------
 # Step 2: PyInstaller
 # ---------------------------------------------------------------------------

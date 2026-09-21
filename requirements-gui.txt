@@ -1,0 +1,11 @@
+# GUI dependencies for office_agent/gui.py and for the PyInstaller bundle.
+#
+# Streamlit is deliberately kept out of requirements.txt: the CLI does not need
+# it, and it pulls in pandas / numpy / pyarrow / pillow, which are a real burden
+# to vendor for air-gapped CLI installs.
+#
+# The frozen application runs the Streamlit GUI, so the PyInstaller build
+# environment MUST install this file (see build/build.ps1, step 1).
+
+-r requirements.txt
+streamlit>=1.55,<2
