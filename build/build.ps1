@@ -3,17 +3,23 @@
 # Master build script for OfficeAgent (Windows x64).
 #
 # Prerequisites (must be installed on the build machine):
-#   - Python 3.11+ (with pip)
+#   - Python 3.11+ x64 (with pip)
 #   - .NET 8 SDK
 #   - PyInstaller  (installed automatically into the venv by this script)
 #   - 7-Zip (7z.exe on PATH) — for Phase 1 ZIP assembly
 #   - Inno Setup 6 (iscc.exe on PATH) — for Phase 2 installer
+#
+# The whole package is x64 (win-x64 launcher, cpu-x64 llama.cpp runtime), so the
+# Python backend must be built with an x64 interpreter too. On Windows ARM the
+# `python` on PATH is usually ARM64; use -PythonExe to pick an x64 one.
 #
 # Usage:
 #   .\build.ps1                         # Phase 1 ZIP build (Standard model)
 #   .\build.ps1 -Phase 2                # Phase 2 Inno Setup installer
 #   .\build.ps1 -Tier pro               # Pro tier
 #   .\build.ps1 -ModelCacheDir D:\models -LlmCacheDir D:\llm-cache
+#   .\build.ps1 -PythonExe "py -3.12-64"                  # pick an x64 interpreter
+#   .\build.ps1 -PythonExe "C:\Python312\python.exe"      # ... or its full path
 #
 # Output:
 #   Phase 1: artifacts\OfficeAgent-v<ver>-Standard-Windows.zip
@@ -43,6 +49,11 @@ param(
     # Skip C# launcher build (reuse existing output).
     [switch]$SkipLauncher,
 
+    # Interpreter used to create the PyInstaller build venv.
+    # Accepts either a full path to python.exe (spaces are fine) or a command
+    # line such as "py -3.12-64". Empty = use `python` from PATH (default).
+    [string]$PythonExe = "",
+
     [string]$Version = "1.0.0"
 )
 
@@ -71,6 +82,74 @@ function Write-Step([string]$msg) {
     Write-Host ">>> $msg" -ForegroundColor Cyan
 }
 
+# ---------------------------------------------------------------------------
+# Interpreter selection helpers
+# ---------------------------------------------------------------------------
+function Resolve-PythonCommand {
+    # Turns the -PythonExe value into a command plus its arguments.
+    param([string]$Spec)
+
+    if ($Spec -eq "") {
+        return @{ Command = "python"; Arguments = @() }
+    }
+
+    # An existing file is used verbatim, so paths containing spaces still work.
+    if (Test-Path -LiteralPath $Spec -PathType Leaf) {
+        return @{ Command = $Spec; Arguments = @() }
+    }
+
+    # Otherwise treat the value as a command line, e.g. "py -3.12-64".
+    $parts = @($Spec -split '\s+' | Where-Object { $_ -ne "" })
+    if ($parts.Count -eq 0) {
+        throw "-PythonExe contains no command: '$Spec'"
+    }
+    $arguments = @()
+    if ($parts.Count -gt 1) { $arguments = @($parts[1..($parts.Count - 1)]) }
+    return @{ Command = $parts[0]; Arguments = $arguments }
+}
+
+function Invoke-PythonScript {
+    # Runs a short Python script from a temp file. Windows PowerShell does not
+    # reliably escape double quotes when passing arguments to native commands,
+    # so `python -c "<script>"` is not safe for anything but trivial snippets.
+    param([string]$Command, [string[]]$Arguments, [string]$Body)
+
+    $scriptFile = Join-Path $env:TEMP ("oa-build-probe-{0}.py" -f (Get-Random))
+    try {
+        Set-Content -LiteralPath $scriptFile -Value $Body -Encoding UTF8
+        & $Command @Arguments $scriptFile
+    } finally {
+        Remove-Item -LiteralPath $scriptFile -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Prints "<version>|<machine>|<pointer bits>" for the interpreter running it.
+$InterpreterProbe = @'
+import platform
+import struct
+print(platform.python_version() + "|" + platform.machine() + "|" + str(struct.calcsize("P") * 8))
+'@
+
+function Get-InterpreterInfo {
+    # Runs the probe and returns @{ Version; Machine; Bits }.
+    param([string]$Command, [string[]]$Arguments, [string]$Label)
+
+    try {
+        $output = Invoke-PythonScript -Command $Command -Arguments $Arguments -Body $InterpreterProbe
+    } catch {
+        throw "Could not run the Python interpreter '$Label': $($_.Exception.Message)"
+    }
+    if ($LASTEXITCODE -ne 0) {
+        throw "The Python interpreter '$Label' exited with code $LASTEXITCODE."
+    }
+
+    $fields = @(($output | Select-Object -Last 1) -split '\|')
+    if ($fields.Count -lt 3) {
+        throw "Unexpected output while probing '$Label': $output"
+    }
+    return @{ Version = $fields[0]; Machine = $fields[1]; Bits = $fields[2] }
+}
+
 Write-Host ""
 Write-Host "============================================" -ForegroundColor White
 Write-Host "  OfficeAgent Build Script" -ForegroundColor White
@@ -82,22 +161,100 @@ Write-Host "============================================" -ForegroundColor White
 # ---------------------------------------------------------------------------
 Write-Step "1. Python virtual environment"
 
+$resolved       = Resolve-PythonCommand $PythonExe
+$PyCmd          = $resolved.Command
+$PyArgs         = $resolved.Arguments
+$PythonDisplay  = (@($PyCmd) + $PyArgs) -join " "
+
+$hostPython = Get-InterpreterInfo -Command $PyCmd -Arguments $PyArgs -Label $PythonDisplay
+Write-Host "  Interpreter: $PythonDisplay"
+Write-Host "  Version: $($hostPython.Version)  |  Arch: $($hostPython.Machine) ($($hostPython.Bits)-bit)"
+
+# The launcher and the llama.cpp runtime shipped in this package are x64, and
+# pyarrow (pulled in by Streamlit) publishes no Windows ARM64 wheels, so pip
+# would try to build it from source. Warn rather than fail: a non-AMD64 build
+# may still be intentional.
+if ($hostPython.Machine -ne "AMD64") {
+    Write-Warning "  Build interpreter architecture is $($hostPython.Machine), not AMD64 (x64)."
+    Write-Warning "  The launcher and llama.cpp runtime in this package are x64, and pyarrow has"
+    Write-Warning "  no Windows ARM64 wheels. Select an x64 interpreter, for example:"
+    Write-Warning "    .\build.ps1 -PythonExe `"py -3.12-64`""
+}
+
 if (-not (Test-Path $VenvDir)) {
     Write-Host "  Creating venv..."
-    python -m venv $VenvDir
+    & $PyCmd @PyArgs -m venv $VenvDir
+    if ($LASTEXITCODE -ne 0) { throw "Creating the build venv with '$PythonDisplay' failed." }
 } else {
     Write-Host "  Reusing existing venv."
+    $venvPython = Get-InterpreterInfo -Command $Python -Arguments @() -Label $Python
+    Write-Host "  Venv Python: $($venvPython.Version)  |  Arch: $($venvPython.Machine) ($($venvPython.Bits)-bit)"
+
+    # An existing venv built by a different interpreter would silently win over
+    # an explicit -PythonExe, reproducing the very failure it was passed to fix.
+    if ($PythonExe -ne "" -and $venvPython.Machine -ne $hostPython.Machine) {
+        throw ("The existing build venv does not match -PythonExe.`n" +
+               "  Existing venv: $($venvPython.Version) $($venvPython.Machine)`n" +
+               "  Requested:     $($hostPython.Version) $($hostPython.Machine)  ($PythonDisplay)`n" +
+               "Delete the venv and re-run:`n" +
+               "  Remove-Item -Recurse -Force `"$VenvDir`"")
+    }
 }
 
 Write-Host "  Installing / upgrading dependencies..."
 & $Pip install --quiet --upgrade pip
+if ($LASTEXITCODE -ne 0) { throw "pip self-upgrade failed." }
+
 & $Pip install --quiet --upgrade pyinstaller
+if ($LASTEXITCODE -ne 0) { throw "pip install pyinstaller failed." }
+
 & $Pip install --quiet -r (Join-Path $RepoRoot "requirements.txt")
+if ($LASTEXITCODE -ne 0) { throw "pip install -r requirements.txt failed." }
 
 # The frozen application runs the Streamlit GUI, so the build environment needs
 # the GUI dependencies too. Without them PyInstaller bundles no Streamlit and
 # the packaged executable fails at start-up with ModuleNotFoundError.
 & $Pip install --quiet -r (Join-Path $RepoRoot "requirements-gui.txt")
+if ($LASTEXITCODE -ne 0) { throw "pip install -r requirements-gui.txt failed." }
+
+# Verify the venv actually holds everything the bundle needs, before spending
+# minutes in PyInstaller only to fail there.
+Write-Host "  Verifying build environment..."
+
+$DependencyProbe = @'
+import importlib.util
+
+REQUIRED = [
+    ("PyInstaller", "pip install pyinstaller"),
+    ("click",       "requirements.txt"),
+    ("docx",        "requirements.txt"),
+    ("openpyxl",    "requirements.txt"),
+    ("pptx",        "requirements.txt"),
+    ("jsonschema",  "requirements.txt"),
+    ("requests",    "requirements.txt"),
+    ("pydantic",    "requirements.txt"),
+    ("streamlit",   "requirements-gui.txt"),
+    ("altair",      "requirements-gui.txt"),
+]
+
+missing = [(name, source) for name, source in REQUIRED if importlib.util.find_spec(name) is None]
+if missing:
+    print("Missing package(s) in the build venv:")
+    for name, source in missing:
+        print("  {0}  (from {1})".format(name, source))
+    raise SystemExit(1)
+
+print("  All required packages are present.")
+'@
+
+Invoke-PythonScript -Command $Python -Arguments @() -Body $DependencyProbe
+if ($LASTEXITCODE -ne 0) {
+    throw ("The build venv is incomplete — see the missing packages above.`n" +
+           "On Windows ARM, pyarrow (a Streamlit dependency) has no wheel and pip tries to`n" +
+           "compile it. Build with an x64 interpreter instead:`n" +
+           "  Remove-Item -Recurse -Force `"$VenvDir`"`n" +
+           "  .\build.ps1 -PythonExe `"py -3.12-64`"")
+}
 
 # ---------------------------------------------------------------------------
 # Step 2: PyInstaller
