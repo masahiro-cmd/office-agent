@@ -72,7 +72,6 @@ $ArtifactsDir = Join-Path $RepoRoot "artifacts"
 
 $VenvDir    = Join-Path $BuildDir "venv"
 $Python     = Join-Path $VenvDir "Scripts\python.exe"
-$Pip        = Join-Path $VenvDir "Scripts\pip.exe"
 
 # ---------------------------------------------------------------------------
 # Banner
@@ -202,19 +201,19 @@ if (-not (Test-Path $VenvDir)) {
 }
 
 Write-Host "  Installing / upgrading dependencies..."
-& $Pip install --quiet --upgrade pip
+& $Python -m pip install --quiet --upgrade pip
 if ($LASTEXITCODE -ne 0) { throw "pip self-upgrade failed." }
 
-& $Pip install --quiet --upgrade pyinstaller
+& $Python -m pip install --quiet --upgrade pyinstaller
 if ($LASTEXITCODE -ne 0) { throw "pip install pyinstaller failed." }
 
-& $Pip install --quiet -r (Join-Path $RepoRoot "requirements.txt")
+& $Python -m pip install --quiet -r (Join-Path $RepoRoot "requirements.txt")
 if ($LASTEXITCODE -ne 0) { throw "pip install -r requirements.txt failed." }
 
 # The frozen application runs the Streamlit GUI, so the build environment needs
 # the GUI dependencies too. Without them PyInstaller bundles no Streamlit and
 # the packaged executable fails at start-up with ModuleNotFoundError.
-& $Pip install --quiet -r (Join-Path $RepoRoot "requirements-gui.txt")
+& $Python -m pip install --quiet -r (Join-Path $RepoRoot "requirements-gui.txt")
 if ($LASTEXITCODE -ne 0) { throw "pip install -r requirements-gui.txt failed." }
 
 # Verify the venv actually holds everything the bundle needs, before spending
