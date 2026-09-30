@@ -34,10 +34,15 @@ def main() -> None:
     # Override sys.argv so Streamlit's Click-based CLI receives correct args.
     # All server flags are also set via environment variables injected by the
     # C# launcher, but explicit flags here serve as a safety fallback.
+    #
+    # global.developmentMode must be forced off: Streamlit defaults it to true
+    # whenever its own path lacks "site-packages", which is always the case in
+    # a PyInstaller bundle, and development mode rejects server.port.
     sys.argv = [
         "streamlit",
         "run",
         gui_path,
+        "--global.developmentMode=false",
         "--server.port=8501",
         "--server.address=127.0.0.1",
         "--server.headless=true",
