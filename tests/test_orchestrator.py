@@ -127,6 +127,43 @@ class TestOrchestratorMock:
         assert result["tool_used"] == "create_pptx"
         assert Path(result["output_path"]).exists()
 
+    def test_run_reports_progress(self, sample_docx_plan: dict, tmp_path: Path) -> None:
+        orch, cfg = self._make_orchestrator(sample_docx_plan, tmp_path)
+        events: list[str] = []
+        orch.run(
+            task="報告書を作って",
+            input_files=[],
+            out_dir=str(cfg.out_dir),
+            template_dir=str(cfg.template_dir),
+            on_progress=events.append,
+        )
+        assert events == [
+            "stage1_start", "stage1_done",
+            "stage2_start", "stage2_done",
+            "stage3_start", "stage3_done",
+        ]
+
+    def test_run_with_document_type(self, sample_xlsx_plan: dict, tmp_path: Path) -> None:
+        """The GUI passes document_type; it must reach the prompt as a hint."""
+        orch, cfg = self._make_orchestrator(sample_xlsx_plan, tmp_path)
+        prompts: list[str] = []
+        original_generate = orch.llm.generate
+
+        def _capture(prompt: str, system: str = "") -> str:
+            prompts.append(prompt)
+            return original_generate(prompt, system)
+
+        orch.llm.generate = _capture  # type: ignore[method-assign]
+        result = orch.run(
+            task="売上の資料を作って",
+            input_files=[],
+            out_dir=str(cfg.out_dir),
+            template_dir=str(cfg.template_dir),
+            document_type="xlsx",
+        )
+        assert result["tool_used"] == "create_xlsx"
+        assert "Excel文書" in prompts[0]
+
 
 # ---------------------------------------------------------------------------
 # Retry logic tests

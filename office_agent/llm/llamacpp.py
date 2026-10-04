@@ -8,6 +8,7 @@ import requests
 
 from office_agent.config import Config
 from office_agent.llm.base import LLMBackend
+from office_agent.llm.exceptions import LLMConnectionError, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +65,12 @@ class LlamaCppBackend(LLMBackend):
             resp = requests.post(url, json=payload, timeout=self._timeout)
             resp.raise_for_status()
         except requests.ConnectionError as exc:
-            raise RuntimeError(
+            raise LLMConnectionError(
                 f"Cannot connect to llama.cpp server at {self._base_url}. "
                 "Run `llama-server --model <model.gguf>` first."
             ) from exc
         except requests.Timeout as exc:
-            raise RuntimeError(
+            raise LLMTimeoutError(
                 f"llama.cpp request timed out after {self._timeout}s"
             ) from exc
 

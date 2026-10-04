@@ -67,3 +67,11 @@ class TestBuildPlanPrompt:
     def test_file_context_in_prompt(self) -> None:
         prompt, _ = build_plan_prompt("月次報告書を作って", ["data.csv"])
         assert "data.csv" in prompt
+
+    def test_doc_type_hint_overrides_detection(self) -> None:
+        prompt, _ = build_plan_prompt("月次報告書を作って", [], doc_type_hint="xlsx")
+        assert "Excel文書" in prompt
+
+    def test_unknown_doc_type_hint_raises(self) -> None:
+        with pytest.raises(ValueError, match="Unknown document type"):
+            build_plan_prompt("月次報告書を作って", [], doc_type_hint="pdf")

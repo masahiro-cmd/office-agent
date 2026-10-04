@@ -82,6 +82,7 @@ a = Analysis(
         "office_agent.llm.llamacpp",
         "office_agent.llm.ollama",
         "office_agent.llm.mock",
+        "office_agent.llm.exceptions",
         "office_agent.tools.docx_tool",
         "office_agent.tools.xlsx_tool",
         "office_agent.tools.pptx_tool",

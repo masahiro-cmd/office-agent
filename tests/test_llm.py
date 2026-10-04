@@ -8,6 +8,7 @@ import pytest
 import requests
 
 from office_agent.config import Config
+from office_agent.llm.exceptions import LLMConnectionError, LLMTimeoutError
 from office_agent.llm.llamacpp import LlamaCppBackend
 from office_agent.llm.ollama import OllamaBackend
 
@@ -157,3 +158,24 @@ class TestLlamaCppBackend:
         with patch("requests.get", side_effect=requests.ConnectionError()):
             health = LlamaCppBackend(_llamacpp_cfg()).check_health()
             assert health == {"running": False, "model_available": False}
+
+
+# ---------------------------------------------------------------------------
+# Typed errors — the GUI maps these to user-facing messages
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("backend_cls", "cfg_factory"),
+    [(OllamaBackend, _ollama_cfg), (LlamaCppBackend, _llamacpp_cfg)],
+)
+class TestTypedErrors:
+    def test_connection_error_type(self, backend_cls, cfg_factory) -> None:
+        with patch("requests.post", side_effect=requests.ConnectionError()):
+            with pytest.raises(LLMConnectionError):
+                backend_cls(cfg_factory()).generate("some prompt")
+
+    def test_timeout_error_type(self, backend_cls, cfg_factory) -> None:
+        with patch("requests.post", side_effect=requests.Timeout()):
+            with pytest.raises(LLMTimeoutError):
+                backend_cls(cfg_factory()).generate("some prompt")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 from office_agent.agent.prompt import build_plan_prompt
@@ -40,9 +41,17 @@ class Orchestrator:
         input_files: list[str],
         out_dir: str,
         template_dir: str,
+        document_type: str | None = None,
+        on_progress: Callable[[str], None] | None = None,
     ) -> dict:
         """
         Execute the full generation pipeline.
+
+        Args:
+            document_type: Forces the document type ("docx"/"xlsx"/"pptx");
+                None detects it from the task text.
+            on_progress: Called with "stage{1,2,3}_start" / "stage{1,2,3}_done"
+                as each stage begins and completes.
 
         Returns a dict with keys:
             - output_path: Path to the generated file
@@ -52,14 +61,22 @@ class Orchestrator:
         out_path = Path(out_dir)
         out_path.mkdir(parents=True, exist_ok=True)
 
+        progress = on_progress or (lambda _: None)
+
         # Stage 1: Generate structured plan via LLM
-        plan_json = self._generate_plan(task, input_files)
+        progress("stage1_start")
+        plan_json = self._generate_plan(task, input_files, doc_type_hint=document_type)
+        progress("stage1_done")
 
         # Stage 2: Validate against JSON schema
+        progress("stage2_start")
         validated = self._validate_plan(plan_json)
+        progress("stage2_done")
 
         # Stage 3: Execute the appropriate tool
+        progress("stage3_start")
         result = self._execute(validated, out_dir=out_dir, template_dir=template_dir)
+        progress("stage3_done")
 
         # Save plan JSON for debugging
         plan_path = out_path / f"{_safe_stem(result['output_path'])}_plan.json"
@@ -68,11 +85,16 @@ class Orchestrator:
 
         return result
 
-    def _generate_plan(self, task: str, input_files: list[str]) -> dict:
+    def _generate_plan(
+        self,
+        task: str,
+        input_files: list[str],
+        doc_type_hint: str | None = None,
+    ) -> dict:
         """Call LLM to produce a structured JSON document plan."""
         for attempt in range(1, self.config.max_retries + 1):
             logger.info(f"LLM plan generation attempt {attempt}/{self.config.max_retries}")
-            prompt, system = build_plan_prompt(task, input_files)
+            prompt, system = build_plan_prompt(task, input_files, doc_type_hint=doc_type_hint)
             raw = self.llm.generate(prompt=prompt, system=system)
             logger.debug(f"LLM raw response:\n{raw[:500]}")
             try:

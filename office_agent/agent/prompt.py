@@ -68,9 +68,19 @@ def detect_doc_type(task: str) -> str:
     return "docx"  # デフォルトは Word
 
 
-def build_plan_prompt(task: str, input_files: list[str]) -> tuple[str, str]:
+def build_plan_prompt(
+    task: str,
+    input_files: list[str],
+    doc_type_hint: str | None = None,
+) -> tuple[str, str]:
     """
     Build (user_prompt, system_prompt) for the LLM.
+
+    Args:
+        task: User instruction.
+        input_files: List of reference file paths shown to the LLM.
+        doc_type_hint: If given ("docx"/"xlsx"/"pptx"), forces the document
+            type instead of detecting it from the task text.
 
     Returns:
         (prompt, system): strings to pass to LLMBackend.generate()
@@ -79,7 +89,11 @@ def build_plan_prompt(task: str, input_files: list[str]) -> tuple[str, str]:
     if input_files:
         file_context = "\n\n【参照ファイル】\n" + "\n".join(f"- {f}" for f in input_files)
 
-    doc_type = detect_doc_type(task)
+    if doc_type_hint is not None and doc_type_hint not in _EXAMPLES:
+        raise ValueError(
+            f"Unknown document type: {doc_type_hint!r}. Choose from: {', '.join(_EXAMPLES)}"
+        )
+    doc_type = doc_type_hint or detect_doc_type(task)
     type_label, example = _EXAMPLES[doc_type]
 
     prompt = f"""\
