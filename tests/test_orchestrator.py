@@ -145,6 +145,9 @@ class _FailThenSucceedBackend(LLMBackend):
     def backend_name(self) -> str:
         return "fail_then_succeed"
 
+    def check_health(self) -> dict[str, bool]:
+        return {"running": True, "model_available": True}
+
     def generate(self, prompt: str, system: str = "") -> str:
         self._calls += 1
         if self._calls <= self._fail:

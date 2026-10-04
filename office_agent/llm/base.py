@@ -28,6 +28,18 @@ class LLMBackend(ABC):
             RuntimeError: On connection failure or timeout.
         """
 
+    @abstractmethod
+    def check_health(self) -> dict[str, bool]:
+        """
+        Report whether the backend is reachable and ready to generate.
+
+        Must not raise on connection failure; an unreachable server is
+        reported as ``running: False``.
+
+        Returns:
+            ``{"running": bool, "model_available": bool}``
+        """
+
     @property
     @abstractmethod
     def backend_name(self) -> str:

@@ -73,3 +73,18 @@ class Config:
     def from_env(cls) -> Config:
         """Create a Config instance populated from environment variables."""
         return cls()
+
+    @classmethod
+    def for_gui(cls, ollama_url: str, model: str) -> Config:
+        """
+        Create the Config used by the GUI for both connection check and generation.
+
+        The backend comes from OFFICE_AGENT_BACKEND. The GUI's Ollama URL / model
+        fields apply only when that backend is Ollama; other backends (the
+        packaged llama.cpp runtime) keep the values set through the environment.
+        """
+        cfg = cls.from_env()
+        if cfg.backend.lower() == "ollama":
+            cfg.ollama_url = ollama_url
+            cfg.model = model
+        return cfg

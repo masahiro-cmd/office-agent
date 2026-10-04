@@ -167,26 +167,42 @@ with st.sidebar:
     st.divider()
 
     if st.button("🔌 接続確認", use_container_width=True):
-        cfg = Config.from_env()
-        cfg.ollama_url = ollama_url
-        cfg.model = model_name
+        cfg = Config.for_gui(ollama_url, model_name)
+        is_ollama = cfg.backend.lower() == "ollama"
         try:
-            from office_agent.llm.ollama import OllamaBackend
-            health = OllamaBackend(cfg).check_health()
-            if health["running"]:
-                st.success(f"✅ Ollama 起動中: {ollama_url}")
-                if health["model_available"]:
-                    st.success(f"✅ モデル '{model_name}' 利用可能")
+            from office_agent.llm import create_backend
+            health = create_backend(cfg).check_health()
+            if is_ollama:
+                if health["running"]:
+                    st.success(f"✅ Ollama 起動中: {ollama_url}")
+                    if health["model_available"]:
+                        st.success(f"✅ モデル '{model_name}' 利用可能")
+                    else:
+                        st.warning(
+                            f"⚠️ モデル '{model_name}' が見つかりません\n"
+                            f"`ollama pull {model_name}` で取得してください"
+                        )
                 else:
-                    st.warning(
-                        f"⚠️ モデル '{model_name}' が見つかりません\n"
-                        f"`ollama pull {model_name}` で取得してください"
+                    st.error(
+                        f"✗ Ollama に接続できません ({ollama_url})\n"
+                        "`ollama serve` でサーバを起動してください"
                     )
             else:
-                st.error(
-                    f"✗ Ollama に接続できません ({ollama_url})\n"
-                    "`ollama serve` でサーバを起動してください"
-                )
+                target = cfg.llamacpp_url if cfg.backend.lower() == "llamacpp" else cfg.backend
+                if health["running"]:
+                    st.success(f"✅ LLM ランタイム起動中: {target}")
+                    if health["model_available"]:
+                        st.success("✅ モデル利用可能")
+                    else:
+                        st.warning(
+                            "⚠️ モデルを読み込み中です\n"
+                            "しばらく待ってから、もう一度お試しください"
+                        )
+                else:
+                    st.error(
+                        f"✗ LLM ランタイムに接続できません ({target})\n"
+                        "OfficeAgent を再起動してください"
+                    )
         except Exception as exc:
             st.error(f"接続確認エラー: {exc}")
 
@@ -264,10 +280,7 @@ if generate_clicked:
     st.session_state.last_result = None
     st.session_state.last_error = None
 
-    cfg = Config.from_env()
-    cfg.backend = "ollama"
-    cfg.ollama_url = ollama_url
-    cfg.model = model_name
+    cfg = Config.for_gui(ollama_url, model_name)
     cfg.template_dir = Path(template_dir)
     cfg.out_dir = Path(out_dir)
     cfg.out_dir.mkdir(parents=True, exist_ok=True)

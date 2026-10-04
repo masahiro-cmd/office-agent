@@ -95,6 +95,10 @@ class MockBackend(LLMBackend):
     def backend_name(self) -> str:
         return "mock"
 
+    def check_health(self) -> dict[str, bool]:
+        """The mock needs no server, so it is always ready."""
+        return {"running": True, "model_available": True}
+
     def generate(self, prompt: str, system: str = "") -> str:
         """Return a JSON string based on keywords in the task section of the prompt."""
         if self._override is not None:

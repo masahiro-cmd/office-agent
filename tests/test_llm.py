@@ -94,6 +94,23 @@ class TestOllamaBackend:
         backend = OllamaBackend(_ollama_cfg())
         assert backend.backend_name == "ollama/llama3.2:3b"
 
+    def test_check_health_model_available(self) -> None:
+        body = {"models": [{"name": "llama3.2:3b"}]}
+        with patch("requests.get", return_value=_ok_mock(body)):
+            health = OllamaBackend(_ollama_cfg()).check_health()
+            assert health == {"running": True, "model_available": True}
+
+    def test_check_health_model_missing(self) -> None:
+        body = {"models": [{"name": "other:latest"}]}
+        with patch("requests.get", return_value=_ok_mock(body)):
+            health = OllamaBackend(_ollama_cfg()).check_health()
+            assert health == {"running": True, "model_available": False}
+
+    def test_check_health_not_running(self) -> None:
+        with patch("requests.get", side_effect=requests.ConnectionError()):
+            health = OllamaBackend(_ollama_cfg()).check_health()
+            assert health == {"running": False, "model_available": False}
+
 
 # ---------------------------------------------------------------------------
 # LlamaCppBackend tests
@@ -125,3 +142,18 @@ class TestLlamaCppBackend:
             backend = LlamaCppBackend(_llamacpp_cfg())
             with pytest.raises(RuntimeError, match="empty choices"):
                 backend.generate("some prompt")
+
+    def test_check_health_ready(self) -> None:
+        with patch("requests.get", return_value=Mock(status_code=200)):
+            health = LlamaCppBackend(_llamacpp_cfg()).check_health()
+            assert health == {"running": True, "model_available": True}
+
+    def test_check_health_model_loading(self) -> None:
+        with patch("requests.get", return_value=Mock(status_code=503)):
+            health = LlamaCppBackend(_llamacpp_cfg()).check_health()
+            assert health == {"running": True, "model_available": False}
+
+    def test_check_health_not_running(self) -> None:
+        with patch("requests.get", side_effect=requests.ConnectionError()):
+            health = LlamaCppBackend(_llamacpp_cfg()).check_health()
+            assert health == {"running": False, "model_available": False}

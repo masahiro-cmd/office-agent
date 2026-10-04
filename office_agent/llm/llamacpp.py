@@ -11,6 +11,9 @@ from office_agent.llm.base import LLMBackend
 
 logger = logging.getLogger(__name__)
 
+# Seconds to wait for the health endpoint; kept short so the GUI stays responsive.
+_HEALTH_TIMEOUT = 5
+
 
 class LlamaCppBackend(LLMBackend):
     """
@@ -29,6 +32,18 @@ class LlamaCppBackend(LLMBackend):
     @property
     def backend_name(self) -> str:
         return f"llamacpp/{self._model}"
+
+    def check_health(self) -> dict[str, bool]:
+        """GET /health; llama-server answers 503 while the model is still loading."""
+        url = f"{self._base_url}/health"
+        try:
+            resp = requests.get(url, timeout=_HEALTH_TIMEOUT)
+        except requests.RequestException as exc:
+            logger.warning(f"llama.cpp health check failed ({url}): {exc}")
+            return {"running": False, "model_available": False}
+
+        # Any HTTP answer means the server is up; only 200 means the model is loaded.
+        return {"running": True, "model_available": resp.status_code == 200}
 
     def generate(self, prompt: str, system: str = "") -> str:
         """POST to /v1/chat/completions and return the assistant message."""

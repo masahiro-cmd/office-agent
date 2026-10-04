@@ -11,6 +11,9 @@ from office_agent.llm.base import LLMBackend
 
 logger = logging.getLogger(__name__)
 
+# Seconds to wait for the health endpoint; kept short so the GUI stays responsive.
+_HEALTH_TIMEOUT = 5
+
 
 class OllamaBackend(LLMBackend):
     """
@@ -29,6 +32,24 @@ class OllamaBackend(LLMBackend):
     @property
     def backend_name(self) -> str:
         return f"ollama/{self._model}"
+
+    def check_health(self) -> dict[str, bool]:
+        """GET /api/tags to see whether Ollama is up and the model is pulled."""
+        url = f"{self._base_url}/api/tags"
+        try:
+            resp = requests.get(url, timeout=_HEALTH_TIMEOUT)
+            resp.raise_for_status()
+            data = resp.json()
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning(f"Ollama health check failed ({url}): {exc}")
+            return {"running": False, "model_available": False}
+
+        names = {m.get("name", "") for m in data.get("models", [])}
+        # Ollama lists an untagged model as "<name>:latest".
+        wanted = {self._model}
+        if ":" not in self._model:
+            wanted.add(f"{self._model}:latest")
+        return {"running": True, "model_available": bool(names & wanted)}
 
     def generate(self, prompt: str, system: str = "") -> str:
         """POST to /api/generate and return the full response text."""
