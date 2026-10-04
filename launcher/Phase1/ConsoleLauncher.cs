@@ -8,6 +8,7 @@
 //   5. Poll health endpoints until both services are ready
 //   6. Open http://127.0.0.1:{port} in the user's default browser
 //   7. Supervise both processes; exit when the user closes the console window
+//   8. Record launcher events and llama-server stdout/stderr under logs\
 //
 // Target: .NET 8, win-x64, single-file self-contained publish
 
@@ -35,14 +36,23 @@ internal sealed class ConsoleLauncher
         // Resolve the install root: the directory that contains OfficeAgent.exe.
         string installRoot = AppContext.BaseDirectory;
 
+        Log.Initialize(installRoot);
+
         try
         {
-            return await RunAsync(installRoot);
+            int exitCode = await RunAsync(installRoot);
+            Log.Info($"ランチャー終了 (exit code {exitCode})");
+            return exitCode;
         }
         catch (Exception ex)
         {
-            ShowError($"予期しないエラーが発生しました:\n{ex.Message}");
+            Log.Error($"予期しない例外: {ex}");
+            ShowError($"予期しないエラーが発生しました:\n{ex.Message}\n\n詳細ログ: {Log.LauncherLogPath}");
             return 1;
+        }
+        finally
+        {
+            Log.Shutdown();
         }
     }
 
@@ -53,9 +63,12 @@ internal sealed class ConsoleLauncher
     {
         // --- 1. Read settings -----------------------------------------------
         var cfg = Settings.Load(Path.Combine(installRoot, "config", "settings.ini"));
+        Log.Info($"設定: tier={cfg.Tier}, llm.port={cfg.LlmPort}, server.port={cfg.ServerPort}, " +
+                 $"context_size={cfg.ContextSize}, threads={cfg.Threads}");
 
         // --- 2. Verify model file -------------------------------------------
         string modelPath = ResolveModelPath(installRoot, cfg);
+        Log.Info($"モデル: {modelPath} (存在={File.Exists(modelPath)})");
         if (!File.Exists(modelPath))
         {
             ShowError(
@@ -66,6 +79,7 @@ internal sealed class ConsoleLauncher
 
         // --- 3. Detect CPU → choose llama-server binary ---------------------
         string llamaExe = SelectLlamaServerBinary(installRoot);
+        Log.Info($"llama-server 実行ファイル: {llamaExe} (存在={File.Exists(llamaExe)})");
 
         // --- 4. Verify ports are free ---------------------------------------
         int llamaPort = cfg.LlmPort;
@@ -88,6 +102,7 @@ internal sealed class ConsoleLauncher
         // --- 5. Warn if RAM is low ------------------------------------------
         long ramGb = GetTotalRamGb();
         int minRam = cfg.Tier == "pro" ? 16 : 8;
+        Log.Info($"RAM: {ramGb} GB (推奨 {minRam} GB 以上), 論理 CPU 数: {Environment.ProcessorCount}");
         if (ramGb > 0 && ramGb < minRam)
         {
             Console.ForegroundColor = ConsoleColor.Yellow;
@@ -101,99 +116,140 @@ internal sealed class ConsoleLauncher
         int threadCount = cfg.Threads > 0 ? cfg.Threads : Math.Max(1, Environment.ProcessorCount / 2);
         int contextSize = cfg.ContextSize;
 
+        // --log-disable is intentionally not passed: llama-server's stdout/stderr
+        // is captured into logs\llama-server.log so start-up failures are visible.
         var llamaArgs = string.Join(" ",
             $"--model \"{modelPath}\"",
             $"--host 127.0.0.1",
             $"--port {llamaPort}",
             $"--ctx-size {contextSize}",
-            $"--threads {threadCount}",
-            "--no-browser",
-            "--log-disable");
+            $"--threads {threadCount}");
 
-        Console.WriteLine("[1/4] LLM ランタイムを起動中...");
-        var llamaProcess = StartHiddenProcess(llamaExe, llamaArgs, installRoot);
-        if (llamaProcess is null)
+        Process? llamaProcess = null;
+        Process? backendProcess = null;
+
+        // Every exit path from here on — success, failure, timeout or exception —
+        // must terminate the child processes, so cleanup lives in finally.
+        try
         {
-            ShowError($"LLM ランタイムの起動に失敗しました:\n{llamaExe}");
-            return 1;
+            var llamaTail = new OutputTail(capacity: 10);
+            LogFile? llamaLog = Log.OpenChildLog("llama-server.log");
+            llamaLog?.Write($"==== llama-server 起動 (launcher PID {Environment.ProcessId}) ====");
+
+            Console.WriteLine("[1/4] LLM ランタイムを起動中...");
+            llamaProcess = StartHiddenProcess(
+                "llama-server", llamaExe, llamaArgs, installRoot,
+                onOutputLine: line =>
+                {
+                    llamaLog?.Write(line);
+                    llamaTail.Add(line);
+                },
+                childLog: llamaLog);
+            if (llamaProcess is null)
+            {
+                ShowError($"LLM ランタイムの起動に失敗しました:\n{llamaExe}\n\n詳細ログ: {Log.LauncherLogPath}");
+                return 1;
+            }
+
+            // --- 7. Spawn OfficeAgentBackend --------------------------------
+            string backendExe = Path.Combine(installRoot, "app", "OfficeAgentBackend.exe");
+            if (!File.Exists(backendExe))
+            {
+                KillAll(llamaProcess);
+                ShowError($"バックエンドが見つかりません:\n{backendExe}");
+                return 1;
+            }
+
+            string outputDir = ResolveOutputDir(cfg);
+            Directory.CreateDirectory(outputDir);
+
+            var backendEnv = BuildBackendEnvironment(cfg, llamaPort, streamlitPort, outputDir);
+
+            Console.WriteLine("[2/4] バックエンドを起動中...");
+            backendProcess = StartHiddenProcess("backend", backendExe, "", installRoot, backendEnv);
+            if (backendProcess is null)
+            {
+                KillAll(llamaProcess);
+                ShowError($"バックエンドの起動に失敗しました。\n\n詳細ログ: {Log.LauncherLogPath}");
+                return 1;
+            }
+
+            // --- 8. Wait for services to be ready ---------------------------
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+            // A short per-request timeout keeps a hung endpoint from consuming
+            // the whole start-up budget in a single request.
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+
+            Console.WriteLine("[3/4] サービスの準備を待っています...");
+
+            HealthResult llamaHealth = await WaitForHealthAsync(
+                http, $"http://127.0.0.1:{llamaPort}/health", llamaProcess, cts.Token,
+                label: "LLM ランタイム");
+
+            if (!llamaHealth.Ready)
+            {
+                // Terminate before the modal dialog so the ports are released
+                // while it is open; then let the output readers drain the last lines.
+                KillAll(llamaProcess, backendProcess);
+                llamaProcess.WaitForExit(1000);
+                ShowError(
+                    "LLM ランタイムが起動しませんでした。\n" +
+                    $"理由: {llamaHealth.Reason}\n\n" +
+                    "--- llama-server の最後の出力 ---\n" +
+                    FormatTail(llamaTail) + "\n\n" +
+                    $"詳細ログ: {llamaLog?.FilePath ?? Log.LauncherLogPath}");
+                return 1;
+            }
+
+            HealthResult streamlitHealth = await WaitForHealthAsync(
+                http, $"http://127.0.0.1:{streamlitPort}/healthz", backendProcess, cts.Token,
+                label: "UI サーバー");
+
+            if (!streamlitHealth.Ready)
+            {
+                KillAll(llamaProcess, backendProcess);
+                ShowError(
+                    "UI サーバーが起動しませんでした。\n" +
+                    $"理由: {streamlitHealth.Reason}\n\n" +
+                    $"詳細ログ: {Log.LauncherLogPath}");
+                return 1;
+            }
+
+            // --- 9. Open browser --------------------------------------------
+            string appUrl = $"http://127.0.0.1:{streamlitPort}";
+            Console.WriteLine($"[4/4] ブラウザを開いています → {appUrl}");
+            Log.Info($"ブラウザを開きます: {appUrl}");
+            OpenBrowser(appUrl);
+
+            // --- 10. Supervise ----------------------------------------------
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("\nOfficeAgent が起動しました。");
+            Console.ResetColor();
+            Console.WriteLine("このウィンドウを閉じると OfficeAgent が終止します。\n");
+            Log.Info("起動完了。子プロセスを監視します。");
+
+            // Register Ctrl+C handler for graceful shutdown.
+            Console.CancelKeyPress += (_, e) =>
+            {
+                e.Cancel = true;
+                Log.Info("Ctrl+C を受信しました。終了します。");
+                KillAll(llamaProcess, backendProcess);
+            };
+
+            // Block until either child exits unexpectedly.
+            Task llamaExit = WaitForExitAsync(llamaProcess);
+            Task backendExit = WaitForExitAsync(backendProcess);
+            Task firstExit = await Task.WhenAny(llamaExit, backendExit);
+
+            string exitedLabel = firstExit == llamaExit ? "llama-server" : "backend";
+            Process exited = firstExit == llamaExit ? llamaProcess : backendProcess;
+            Log.Warn($"{exitedLabel} が終了したため OfficeAgent を終了します ({DescribeExit(exited)})");
+            return 0;
         }
-
-        // --- 7. Spawn OfficeAgentBackend ------------------------------------
-        string backendExe = Path.Combine(installRoot, "app", "OfficeAgentBackend.exe");
-        if (!File.Exists(backendExe))
-        {
-            llamaProcess.Kill(entireProcessTree: true);
-            ShowError($"バックエンドが見つかりません:\n{backendExe}");
-            return 1;
-        }
-
-        string outputDir = ResolveOutputDir(cfg);
-        Directory.CreateDirectory(outputDir);
-
-        var backendEnv = BuildBackendEnvironment(cfg, llamaPort, streamlitPort, outputDir);
-
-        Console.WriteLine("[2/4] バックエンドを起動中...");
-        var backendProcess = StartHiddenProcess(backendExe, "", installRoot, backendEnv);
-        if (backendProcess is null)
-        {
-            llamaProcess.Kill(entireProcessTree: true);
-            ShowError("バックエンドの起動に失敗しました。");
-            return 1;
-        }
-
-        // --- 8. Wait for services to be ready -------------------------------
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-        using var http = new HttpClient();
-
-        Console.WriteLine("[3/4] サービスの準備を待っています...");
-
-        bool llamaReady = await WaitForHealthAsync(
-            http, $"http://127.0.0.1:{llamaPort}/health", cts.Token,
-            label: "LLM ランタイム");
-
-        if (!llamaReady)
+        finally
         {
             KillAll(llamaProcess, backendProcess);
-            ShowError("LLM ランタイムが起動しませんでした。\nlogs\\ フォルダのログを確認してください。");
-            return 1;
         }
-
-        bool streamlitReady = await WaitForHealthAsync(
-            http, $"http://127.0.0.1:{streamlitPort}/healthz", cts.Token,
-            label: "UI サーバー");
-
-        if (!streamlitReady)
-        {
-            KillAll(llamaProcess, backendProcess);
-            ShowError("UI サーバーが起動しませんでした。\nlogs\\ フォルダのログを確認してください。");
-            return 1;
-        }
-
-        // --- 9. Open browser ------------------------------------------------
-        string appUrl = $"http://127.0.0.1:{streamlitPort}";
-        Console.WriteLine($"[4/4] ブラウザを開いています → {appUrl}");
-        OpenBrowser(appUrl);
-
-        // --- 10. Supervise --------------------------------------------------
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("\nOfficeAgent が起動しました。");
-        Console.ResetColor();
-        Console.WriteLine("このウィンドウを閉じると OfficeAgent が終止します。\n");
-
-        // Register Ctrl+C handler for graceful shutdown.
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            KillAll(llamaProcess, backendProcess);
-        };
-
-        // Block until either child exits unexpectedly.
-        await Task.WhenAny(
-            WaitForExitAsync(llamaProcess),
-            WaitForExitAsync(backendProcess));
-
-        KillAll(llamaProcess, backendProcess);
-        return 0;
     }
 
     // -----------------------------------------------------------------------
@@ -294,18 +350,41 @@ internal sealed class ConsoleLauncher
     // -----------------------------------------------------------------------
     // Process helpers
     // -----------------------------------------------------------------------
+    /// <summary>
+    /// Starts a child process without a visible window. When
+    /// <paramref name="onOutputLine"/> is given, stdout and stderr are
+    /// redirected and every line is passed to it prefixed with [stdout]/[stderr].
+    /// Start parameters and the exit code are written to the launcher log and,
+    /// when given, to <paramref name="childLog"/>.
+    /// </summary>
     static Process? StartHiddenProcess(
+        string label,
         string exePath,
         string arguments,
         string workingDir,
-        Dictionary<string, string>? extraEnv = null)
+        Dictionary<string, string>? extraEnv = null,
+        Action<string>? onOutputLine = null,
+        LogFile? childLog = null)
     {
+        void LogBoth(string message)
+        {
+            Log.Info($"{label}: {message}");
+            childLog?.Write(message);
+        }
+
+        LogBoth($"実行パス: {exePath}");
+        LogBoth($"引数: {arguments}");
+        LogBoth($"WorkingDirectory: {workingDir}");
+
         if (!File.Exists(exePath))
         {
             Console.Error.WriteLine($"[ERROR] 実行ファイルが見つかりません: {exePath}");
+            Log.Error($"{label}: 実行ファイルが見つかりません: {exePath}");
+            childLog?.Write($"実行ファイルが見つかりません: {exePath}");
             return null;
         }
 
+        bool capture = onOutputLine is not null;
         var psi = new ProcessStartInfo
         {
             FileName = exePath,
@@ -313,9 +392,14 @@ internal sealed class ConsoleLauncher
             WorkingDirectory = workingDir,
             UseShellExecute = false,
             CreateNoWindow = true,
-            RedirectStandardOutput = false,
-            RedirectStandardError = false,
+            RedirectStandardOutput = capture,
+            RedirectStandardError = capture,
         };
+        if (capture)
+        {
+            psi.StandardOutputEncoding = Encoding.UTF8;
+            psi.StandardErrorEncoding = Encoding.UTF8;
+        }
 
         if (extraEnv is not null)
         {
@@ -323,29 +407,108 @@ internal sealed class ConsoleLauncher
                 psi.EnvironmentVariables[key] = value;
         }
 
+        Process? process;
         try
         {
-            return Process.Start(psi);
+            process = Process.Start(psi);
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[ERROR] プロセス起動失敗 ({exePath}): {ex.Message}");
+            Log.Error($"{label}: プロセス起動失敗: {ex}");
+            childLog?.Write($"プロセス起動失敗: {ex.Message}");
             return null;
         }
+
+        if (process is null)
+        {
+            Log.Error($"{label}: Process.Start が null を返しました");
+            childLog?.Write("Process.Start が null を返しました");
+            return null;
+        }
+
+        LogBoth($"起動しました (PID {process.Id})");
+
+        process.EnableRaisingEvents = true;
+        process.Exited += (_, _) => LogBoth($"プロセス終了 (PID {process.Id}, {DescribeExit(process)})");
+
+        if (onOutputLine is not null)
+        {
+            process.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data is not null) onOutputLine($"[stdout] {e.Data}");
+            };
+            process.ErrorDataReceived += (_, e) =>
+            {
+                if (e.Data is not null) onOutputLine($"[stderr] {e.Data}");
+            };
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+        }
+
+        return process;
     }
 
     static void KillAll(params Process?[] processes)
     {
         foreach (var p in processes)
         {
-            if (p is null || p.HasExited) continue;
+            if (p is null) continue;
             try
             {
+                if (p.HasExited) continue;
+                Log.Info($"PID {p.Id} を終了します");
                 p.Kill(entireProcessTree: true);
-                p.WaitForExit(3000);
+                if (!p.WaitForExit(3000))
+                    Log.Warn($"PID {p.Id} が 3 秒以内に終了しませんでした");
             }
-            catch { /* Best-effort */ }
+            catch (Exception ex)
+            {
+                // Best-effort: one failure must not stop the remaining kills.
+                Log.Warn($"プロセス終了処理に失敗しました: {ex.Message}");
+            }
         }
+    }
+
+    /// <summary>Exit code in decimal and hex, with a hint for common Windows crash codes.</summary>
+    static string DescribeExit(Process p)
+    {
+        int code;
+        try
+        {
+            code = p.ExitCode;
+        }
+        catch (Exception ex)
+        {
+            return $"終了コード取得失敗: {ex.Message}";
+        }
+
+        uint raw = unchecked((uint)code);
+        string hint = raw switch
+        {
+            0xC0000135 => " — DLL が見つかりません (llm フォルダの DLL 不足の可能性)",
+            0xC000001D => " — CPU が未対応の命令を実行しました (AVX 非対応 CPU の可能性)",
+            0xC0000005 => " — アクセス違反",
+            0xC0000409 => " — スタックバッファオーバーラン / 異常終了",
+            _ => "",
+        };
+        return $"終了コード {code} (0x{raw:X8}){hint}";
+    }
+
+    /// <summary>Last captured output lines for console / dialog display.</summary>
+    static string FormatTail(OutputTail tail)
+    {
+        const int maxLineLength = 200;
+        string[] lines = tail.Snapshot();
+        if (lines.Length == 0)
+            return "(出力なし)";
+
+        var sb = new StringBuilder();
+        foreach (string line in lines)
+        {
+            sb.AppendLine(line.Length > maxLineLength ? line[..maxLineLength] + "…" : line);
+        }
+        return sb.ToString().TrimEnd();
     }
 
     static Task WaitForExitAsync(Process p) =>
@@ -354,43 +517,94 @@ internal sealed class ConsoleLauncher
     // -----------------------------------------------------------------------
     // Health check polling
     // -----------------------------------------------------------------------
-    static async Task<bool> WaitForHealthAsync(
+    readonly record struct HealthResult(bool Ready, string Reason);
+
+    /// <summary>
+    /// Polls <paramref name="url"/> until it answers 2xx, the process exits, or
+    /// <paramref name="ct"/> expires. Never throws on timeout; the returned
+    /// Reason says why the service did not become ready.
+    /// </summary>
+    static async Task<HealthResult> WaitForHealthAsync(
         HttpClient http,
         string url,
+        Process process,
         CancellationToken ct,
         string label = "service")
     {
         const int delayMs = 1000;
         int attempts = 0;
+        var elapsed = Stopwatch.StartNew();
+        string lastReason = "未確認";
+        string? loggedReason = null;
 
-        while (!ct.IsCancellationRequested)
+        Log.Info($"{label}: health check 開始 {url} (PID {process.Id})");
+
+        while (true)
         {
+            if (process.HasExited)
+            {
+                string reason = $"プロセスが終了しました ({DescribeExit(process)})";
+                Log.Error($"{label}: health check 失敗 — {reason} / 直前の応答: {lastReason}");
+                return new HealthResult(false, reason);
+            }
+
+            if (ct.IsCancellationRequested)
+                break;
+
             try
             {
-                var response = await http.GetAsync(url, ct);
+                using var response = await http.GetAsync(url, ct);
                 if (response.IsSuccessStatusCode)
                 {
                     Console.WriteLine($"  ✓ {label} 準備完了");
-                    return true;
+                    Log.Info($"{label}: 準備完了 ({elapsed.Elapsed.TotalSeconds:F0} 秒)");
+                    return new HealthResult(true, "");
                 }
+                // llama-server answers 503 while the model is still loading.
+                lastReason = $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}";
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
                 break;
             }
-            catch
+            catch (TaskCanceledException)
             {
-                // Not ready yet — keep polling.
+                lastReason = $"応答なし (リクエストタイムアウト {http.Timeout.TotalSeconds:F0} 秒)";
+            }
+            catch (HttpRequestException ex)
+            {
+                lastReason = $"接続失敗: {ex.Message}";
+            }
+            catch (Exception ex)
+            {
+                lastReason = $"{ex.GetType().Name}: {ex.Message}";
+            }
+
+            // Log only changes so a 120-second wait does not flood the log.
+            if (lastReason != loggedReason)
+            {
+                Log.Info($"{label}: 未準備 ({elapsed.Elapsed.TotalSeconds:F0} 秒経過) — {lastReason}");
+                loggedReason = lastReason;
             }
 
             attempts++;
             if (attempts % 10 == 0)
                 Console.WriteLine($"  待機中... ({attempts}s)");
 
-            await Task.Delay(delayMs, ct).ConfigureAwait(false);
+            try
+            {
+                await Task.Delay(delayMs, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
 
-        return false;
+        string timeoutReason =
+            $"タイムアウト ({elapsed.Elapsed.TotalSeconds:F0} 秒以内に応答しませんでした) / 直前の応答: {lastReason}";
+        Log.Error($"{label}: health check 失敗 — {timeoutReason}");
+        return new HealthResult(false, timeoutReason);
     }
 
     // -----------------------------------------------------------------------
@@ -479,6 +693,8 @@ internal sealed class ConsoleLauncher
 
     static void ShowError(string message)
     {
+        Log.Error($"エラー表示: {message.Replace("\n", " | ")}");
+
         Console.ForegroundColor = ConsoleColor.Red;
         Console.Error.WriteLine($"\n[エラー] {message}\n");
         Console.ResetColor();
@@ -494,6 +710,194 @@ internal sealed class ConsoleLauncher
         {
             // MessageBox not available (headless/SSH); console output is enough.
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// File logging — local files only, no external logging.
+//
+// Logs go to <install root>\logs\. If that folder is not writable (e.g. the
+// ZIP was extracted somewhere read-only), %LOCALAPPDATA%\OfficeAgent\logs\ is
+// used instead. Logging failures never stop the launcher.
+// ---------------------------------------------------------------------------
+internal static class Log
+{
+    private static readonly object Gate = new();
+    private static readonly List<LogFile> OpenFiles = new();
+    private static LogFile? _launcher;
+
+    /// <summary>Directory holding the log files, or null when none is writable.</summary>
+    public static string? LogDir { get; private set; }
+
+    public static string LauncherLogPath =>
+        _launcher?.FilePath ?? "(ログファイルを作成できませんでした)";
+
+    public static void Initialize(string installRoot)
+    {
+        string[] candidates =
+        {
+            Path.Combine(installRoot, "logs"),
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "OfficeAgent", "logs"),
+        };
+
+        foreach (string dir in candidates)
+        {
+            try
+            {
+                Directory.CreateDirectory(dir);
+                _launcher = LogFile.Open(Path.Combine(dir, "launcher.log"));
+                LogDir = dir;
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[警告] ログフォルダを使用できません: {dir} ({ex.Message})");
+            }
+        }
+
+        if (_launcher is null)
+        {
+            Console.Error.WriteLine("[警告] ログファイルを作成できませんでした。ログはコンソールにのみ表示されます。");
+            return;
+        }
+
+        lock (Gate) OpenFiles.Add(_launcher);
+        Console.WriteLine($"  ログ: {LogDir}");
+
+        Info("==== OfficeAgent ランチャー起動 ====");
+        Info($"ランチャー: {Environment.ProcessPath} (PID {Environment.ProcessId}, " +
+             $"version {typeof(Log).Assembly.GetName().Version})");
+        Info($"インストール先: {installRoot}");
+        Info($"OS: {Environment.OSVersion}, 64bit プロセス: {Environment.Is64BitProcess}");
+    }
+
+    /// <summary>Opens another log file next to launcher.log; null when logging is unavailable.</summary>
+    public static LogFile? OpenChildLog(string fileName)
+    {
+        if (LogDir is null) return null;
+        try
+        {
+            var file = LogFile.Open(Path.Combine(LogDir, fileName));
+            lock (Gate) OpenFiles.Add(file);
+            Info($"{fileName} に出力を記録します: {file.FilePath}");
+            return file;
+        }
+        catch (Exception ex)
+        {
+            Warn($"{fileName} を開けませんでした: {ex.Message}");
+            return null;
+        }
+    }
+
+    public static void Info(string message)  => _launcher?.Write($"[INFO] {message}");
+    public static void Warn(string message)  => _launcher?.Write($"[WARN] {message}");
+    public static void Error(string message) => _launcher?.Write($"[ERROR] {message}");
+
+    public static void Shutdown()
+    {
+        lock (Gate)
+        {
+            foreach (var file in OpenFiles) file.Close();
+            OpenFiles.Clear();
+        }
+    }
+}
+
+/// <summary>
+/// One append-only UTF-8 log file, safe to write from several threads.
+/// A file larger than 10 MB at open time is moved to *.prev.log first, so
+/// each log stays bounded at roughly two generations.
+/// </summary>
+internal sealed class LogFile
+{
+    private const long RotateBytes = 10L * 1024 * 1024;
+
+    private readonly object _gate = new();
+    private StreamWriter? _writer;
+
+    public string FilePath { get; }
+
+    private LogFile(string filePath, StreamWriter writer)
+    {
+        FilePath = filePath;
+        _writer = writer;
+    }
+
+    public static LogFile Open(string filePath)
+    {
+        var info = new FileInfo(filePath);
+        if (info.Exists && info.Length > RotateBytes)
+        {
+            try
+            {
+                File.Move(filePath, Path.ChangeExtension(filePath, ".prev.log"), overwrite: true);
+            }
+            catch (Exception ex)
+            {
+                // Another instance may hold the file; keep appending instead.
+                Console.Error.WriteLine($"[警告] ログのローテーションに失敗しました: {filePath} ({ex.Message})");
+            }
+        }
+
+        var stream = new FileStream(
+            filePath, FileMode.Append, FileAccess.Write,
+            FileShare.ReadWrite | FileShare.Delete);
+        // AutoFlush so the last lines survive a crash or a closed console window.
+        var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false))
+        {
+            AutoFlush = true,
+        };
+        return new LogFile(filePath, writer);
+    }
+
+    public void Write(string line)
+    {
+        lock (_gate)
+        {
+            if (_writer is null) return;  // Already closed; late output is dropped.
+            try
+            {
+                _writer.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {line}");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[警告] ログ書き込みに失敗しました ({FilePath}): {ex.Message}");
+            }
+        }
+    }
+
+    public void Close()
+    {
+        lock (_gate)
+        {
+            _writer?.Dispose();
+            _writer = null;
+        }
+    }
+}
+
+/// <summary>Keeps the last N output lines of a child process for error dialogs.</summary>
+internal sealed class OutputTail
+{
+    private readonly int _capacity;
+    private readonly Queue<string> _lines = new();
+
+    public OutputTail(int capacity) => _capacity = capacity;
+
+    public void Add(string line)
+    {
+        lock (_lines)
+        {
+            _lines.Enqueue(line);
+            while (_lines.Count > _capacity) _lines.Dequeue();
+        }
+    }
+
+    public string[] Snapshot()
+    {
+        lock (_lines) return _lines.ToArray();
     }
 }
 
